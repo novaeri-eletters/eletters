@@ -1,454 +1,511 @@
-// path: AnniversaryTreasureHunt.jsx
-// Single-file React component, NO external CSS libs.
-// Adds a special "loop around the lake" level with checkpoints; Continue unlocks after enough checkpoints.
+// path: src/AnniversaryTimeline.jsx
+// Event-driven treasure hunt with OSM tiles (no libs). Oval lake path, icons-only time machine, fixed Simulate.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
-/*************************
- * CONFIG — edit these
- *************************/
-const STEPS = [
-  // Step 1 — point target
-  {
-    type: "point",
-    point: { lat: 10.769614566325627, lng: 106.7132948163323 }, // ✅ updated first spot
-    label: "First date spot x",
-    message: "Love you to the moon",
-  },
-  // Step 2 — loop target (walk around a lake)
-  {
-    type: "loop",
-    center: { lat: 10.803656578664285, lng: 106.7329434561889 }, // lake center (edit if needed)
-    radius_m: 150,        // ring radius around the lake (edit for your lake size)
-    checkpoints: 12,      // how many dots around the ring
-    require_ratio: 0.66,  // fraction of checkpoints to visit to unlock Continue
-    hit_radius_m: 60,     // how close to a checkpoint to count as visited
-    clockwise: true,      // just for arrow vibes
-    label: "Walk around the lake 🌊",
-    message: "Love you forever and ever 💞",
-  },
+/* ================= CONFIG ================= */
+
+// Level 1 — restaurant
+const L1_TARGET = { lat: 10.8036389, lng: 106.7329167 }; // 10°48'13.1"N 106°43'58.5"E
+
+// Level 2 — lake/canal (oval)
+const LAKE_CENTER = { lat: 10.7699445, lng: 106.7132778 }; // 10°46'11.8"N 106°42'47.8"E
+const OVAL = { aM: 300, bM: 110, rotationDeg: -14, checkpoints: 18, require: 12 }; // tweakable
+
+const GATE_M = 7; // game gate radius
+
+const EVENTS = [
+  { id: "intro",         title: "<3 of Hearts — Intro",          kind: "intro" },
+  { id: "reachL1",       title: "Reach the first spot",          kind: "reachPoint" },
+  { id: "startL1",       title: "Level 1 begins",                kind: "modal", text: "A shy hello becomes warm. Ready?" },
+  { id: "checklist11",   title: "11 items checklist",            kind: "checklist" },
+  { id: "checklistPass", title: "Checklist passed",              kind: "modal", text: "All checked — memories secured." },
+  { id: "revealL2",      title: "Reveal Level 2 location",       kind: "modal", text: "A quiet ring where water smiles." },
+  { id: "arriveL2",      title: "Arrive near the water",         kind: "arriveLake" },
+  { id: "snacks",        title: "Snack run",                     kind: "task",   text: "Grab snacks from a nearby convenience store." },
+  { id: "feedFish",      title: "Feed the fish",                 kind: "mini",   text: "Tap pellets to feed our tiny friends." },
+  { id: "walkLake",      title: "Walk around the lake",          kind: "lakeLoop" },
+  { id: "finishL2",      title: "Level 2 finished",              kind: "modal", text: "Feet happy, hearts happier." },
+  { id: "congrats",      title: "Congrats",                      kind: "modal", text: "You two crushed it. One more thing…" },
+  { id: "voucher",       title: "Collect your gift voucher",     kind: "reward" },
 ];
 
-const HINT_RADIUS_DEFAULT = 60; // only for the point step's hint ring
-const GATE_RADIUS = 100; // point-step gate distance for Continue
+/* ================= UTILS ================= */
 
-/*************************
- * UTILS
- *************************/
-function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
-export function distanceMeters(a, b) {
+const toRad = (x) => (x * Math.PI) / 180;
+const toDeg = (x) => (x * 180) / Math.PI;
+
+function distanceM(a, b) {
   if (!a || !b) return Infinity;
-  const toRad = (x) => (x * Math.PI) / 180;
   const R = 6371000;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
-  const sinDLat = Math.sin(dLat / 2);
-  const sinDLng = Math.sin(dLng / 2);
-  const aVal = sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLng * sinDLng;
-  const c = 2 * Math.atan2(Math.sqrt(aVal), Math.sqrt(1 - aVal));
-  return R * c;
-}
-function metersPerDeg(latDeg) {
-  const lat = (latDeg * Math.PI) / 180;
-  const mPerLat = 111132.92 - 559.82 * Math.cos(2 * lat) + 1.175 * Math.cos(4 * lat) - 0.0023 * Math.cos(6 * lat);
-  const mPerLon = 111412.84 * Math.cos(lat) - 93.5 * Math.cos(3 * lat) + 0.118 * Math.cos(5 * lat);
-  return { mPerLat, mPerLon };
-}
-function makeProjector(ref) {
-  const { mPerLat, mPerLon } = metersPerDeg(ref.lat);
-  return {
-    project({ lat, lng }) { return { x: (lng - ref.lng) * mPerLon, y: (lat - ref.lat) * mPerLat }; },
-    unproject({ x, y }) { return { lat: ref.lat + y / mPerLat, lng: ref.lng + x / mPerLon }; },
-    meters: { mPerLat, mPerLon },
-  };
-}
-function getLS(key, fallback) { try { if (typeof window !== "undefined") { const v = window.localStorage.getItem(key); return v ?? fallback; } } catch {} return fallback; }
-function setLS(key, val) { try { if (typeof window !== "undefined") window.localStorage.setItem(key, val); } catch {} }
-function heatWord(d, hintR) {
-  if (!Number.isFinite(d)) return "—";
-  if (d <= GATE_RADIUS) return "FOUND! 🎉";
-  if (d <= 40 + hintR) return "Smol warm 🔥";
-  if (d <= 150 + hintR) return "Warm ☀️";
-  if (d <= 500 + hintR) return "Getting closer 👀";
-  return "Adventure time ➡️";
-}
-function canAdvancePoint(distance) { return Number.isFinite(distance) && distance <= GATE_RADIUS; }
-
-/*************************
- * GEO HOOK
- *************************/
-function useGeolocation(active) {
-  const [pos, setPos] = useState(null);
-  const [error, setError] = useState(null);
-  const watchId = useRef(null);
-  useEffect(() => {
-    if (!active) return;
-    if (!("geolocation" in navigator)) { setError("Geolocation not supported."); return; }
-    setError(null);
-    watchId.current = navigator.geolocation.watchPosition(
-      (p) => setPos({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }),
-      (e) => setError(e?.message || "Location error"),
-      { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
-    );
-    return () => { if (watchId.current != null) navigator.geolocation.clearWatch(watchId.current); };
-  }, [active]);
-  return { pos, error };
+  const dLat = toRad(b.lat - a.lat), dLon = toRad(b.lng - a.lng);
+  const s1 = Math.sin(dLat / 2), s2 = Math.sin(dLon / 2);
+  const h = s1*s1 + Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*s2*s2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
-/*************************
- * LOOP HELPERS
- *************************/
-function makeLoopCheckpoints(step) {
-  const { center, radius_m, checkpoints } = step;
-  const proj = makeProjector(center);
-  const pts = [];
-  for (let i = 0; i < checkpoints; i++) {
-    const a = (i / checkpoints) * Math.PI * 2;
-    const xy = { x: Math.cos(a) * radius_m, y: Math.sin(a) * radius_m };
-    pts.push(proj.unproject(xy));
-  }
-  return pts;
+const save=(k,v)=>{ try{ localStorage.setItem(k, JSON.stringify(v)); }catch{} };
+const load=(k,d)=>{ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch{ return d; } };
+
+// meters offset (east, north) <-> lat/lng
+function metersToOffsetLL(center, dxEast, dyNorth) {
+  const dLat = dyNorth / 111111; // ~m per degree
+  const dLng = dxEast / (111111 * Math.cos(toRad(center.lat)));
+  return { lat: center.lat + dLat, lng: center.lng + dLng };
+}
+function llToMetersOffset(center, pt) {
+  const dy = (pt.lat - center.lat) * 111111;
+  const dx = (pt.lng - center.lng) * 111111 * Math.cos(toRad(center.lat));
+  return { dx, dy };
 }
 
-/*************************
- * MINI MAP (SVG)
- *************************/
-function MiniMap({ points, you, hintRadius, onSimClick, showHint, pointTarget, loopInfo }) {
-  const svgRef = useRef(null);
-  const ref = useMemo(() => points.length ? {
-    lat: points.reduce((s,p)=>s+p.lat,0)/points.length,
-    lng: points.reduce((s,p)=>s+p.lng,0)/points.length,
-  } : (pointTarget || loopInfo?.center) || { lat: 0, lng: 0 }, [points, pointTarget, loopInfo]);
+/* ================= OSM MAP (no libs) ================= */
 
-  const proj = useMemo(() => makeProjector(ref), [ref]);
-  const projPoints = points.map((p) => ({ ...p, xy: proj.project(p) }));
-  const youXY = you ? proj.project(you) : null;
-  const pointXY = pointTarget ? proj.project(pointTarget) : null;
-  const loopCenterXY = loopInfo ? proj.project(loopInfo.center) : null;
+const WORLD_SIZE = (z) => 256 * 2 ** z;
+const lon2x = (lon, z) => ((lon + 180) / 360) * WORLD_SIZE(z);
+const lat2y = (lat, z) => {
+  const s = Math.sin(toRad(lat));
+  const y = 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI);
+  return y * WORLD_SIZE(z);
+};
+const x2lon = (x, z) => (x / WORLD_SIZE(z)) * 360 - 180;
+const y2lat = (y, z) => {
+  const n = Math.PI - (2 * Math.PI * y) / WORLD_SIZE(z);
+  return toDeg(Math.atan(0.5 * (Math.exp(n) - Math.exp(-n))));
+};
 
-  const allXY = [
-    ...projPoints.map((p) => p.xy),
-    ...(youXY ? [youXY] : []),
-    ...(pointXY ? [pointXY] : []),
-    ...(loopCenterXY ? [loopCenterXY] : []),
-  ];
-  const pad = 220;
-  const minX = Math.min(...allXY.map((p) => p.x)) - pad;
-  const maxX = Math.max(...allXY.map((p) => p.x)) + pad;
-  const minY = Math.min(...allXY.map((p) => p.y)) - pad;
-  const maxY = Math.max(...allXY.map((p) => p.y)) + pad;
-  const vb = { x: minX, y: minY, w: Math.max(420, maxX - minX), h: Math.max(420, maxY - minY) };
-
-  function clientToViewBox(e) {
-    const svg = svgRef.current; if (!svg) return null;
-    const rect = svg.getBoundingClientRect();
-    const sx = clamp((e.clientX - rect.left) / rect.width, 0, 1);
-    const sy = clamp((e.clientY - rect.top) / rect.height, 0, 1);
-    return { x: vb.x + sx * vb.w, y: vb.y + sy * vb.h };
-  }
-  function handleClick(e) {
-    if (!onSimClick) return; const pt = clientToViewBox(e); if (!pt) return; onSimClick(proj.unproject(pt));
-  }
-
-  const gridStep = 50; const gridLines = [];
-  for (let x = Math.ceil(vb.x / gridStep) * gridStep; x < vb.x + vb.w; x += gridStep) gridLines.push({ x1: x, y1: vb.y, x2: x, y2: vb.y + vb.h });
-  for (let y = Math.ceil(vb.y / gridStep) * gridStep; y < vb.y + vb.h; y += gridStep) gridLines.push({ x1: vb.x, y1: y, x2: vb.x + vb.w, y2: y });
-  const pathPoints = projPoints.map((p) => `${p.xy.x},${p.xy.y}`).join(" ");
-
-  // Loop checkpoints (for drawing)
-  const loopCheckpoints = useMemo(() => loopInfo ? makeLoopCheckpoints(loopInfo).map((p) => ({ lat: p.lat, lng: p.lng, xy: proj.project(p) })) : [], [loopInfo, proj]);
-
-  return (
-    <svg ref={svgRef} onClick={handleClick} viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`} className="map" role="img" aria-label="Mini map">
-      <g strokeWidth={1}>{gridLines.map((l, i) => (<line key={i} {...l} stroke="#ffe4e6" />))}</g>
-      {projPoints.length > 1 && (<polyline points={pathPoints} fill="none" stroke="#fb7185" strokeWidth={4} />)}
-
-      {/* Point target visuals */}
-      {pointXY && (
-        <g>
-          {showHint && (<>
-            <circle cx={pointXY.x} cy={pointXY.y} r={hintRadius} fill="#fb7185" opacity={0.12} />
-            <circle cx={pointXY.x} cy={pointXY.y} r={hintRadius} fill="none" stroke="#fb7185" strokeDasharray="6 8" />
-          </>)}
-          <circle cx={pointXY.x} cy={pointXY.y} r={12} fill="#e11d48" opacity={0.9} />
-          <circle className="sparkle" cx={pointXY.x} cy={pointXY.y} r={24} fill="none" stroke="#f43f5e" />
-          <circle className="sparkle" cx={pointXY.x} cy={pointXY.y} r={36} fill="none" stroke="#fda4af" />
-        </g>
-      )}
-
-      {/* Loop visuals */}
-      {loopInfo && loopCenterXY && (
-        <g>
-          <circle cx={loopCenterXY.x} cy={loopCenterXY.y} r={loopInfo.radius_m} fill="#60a5fa" opacity={0.04} />
-          <circle cx={loopCenterXY.x} cy={loopCenterXY.y} r={loopInfo.radius_m} fill="none" stroke="#60a5fa" strokeDasharray="8 10" />
-          {loopCheckpoints.map((p, i) => (
-            <g key={i}>
-              <circle cx={p.xy.x} cy={p.xy.y} r={7} fill={loopInfo.visited?.has(i) ? "#22c55e" : "#0ea5e9"} />
-              {/* Direction arrows */}
-              {i % 2 === 0 && (
-                <path d={`M ${p.xy.x} ${p.xy.y} l 10 0`} stroke="#0ea5e9" />
-              )}
-            </g>
-          ))}
-        </g>
-      )}
-
-      {/* Past markers as candy drops (centers/points) */}
-      {projPoints.map((p, i) => (
-        <g key={i}>
-          <circle cx={p.xy.x} cy={p.xy.y} r={8} fill={i === projPoints.length - 1 ? "#e11d48" : "#0ea5e9"} />
-        </g>
-      ))}
-
-      {/* You */}
-      {youXY && (
-        <g>
-          <circle cx={youXY.x} cy={youXY.y} r={9} fill="#2563eb" />
-          <circle cx={youXY.x} cy={youXY.y} r={16} fill="none" stroke="#2563eb" strokeDasharray="4 4" />
-        </g>
-      )}
-    </svg>
-  );
+function useResize(ref){
+  const [size,set]=useState({w:0,h:0});
+  useEffect(()=>{ const el=ref.current; if(!el) return;
+    const ro=new ResizeObserver(([e])=>set({w:e.contentRect.width,h:e.contentRect.height}));
+    ro.observe(el); return ()=>ro.disconnect(); },[]);
+  return size;
 }
 
-/*************************
- * DECOR
- *************************/
-function MascotHeart() { return (<div className="mascot"><div className="bounce">🥰</div></div>); }
-function ProgressHearts({ total, current }) { return (<div className="hearts">{Array.from({ length: total }).map((_, i) => (<span key={i} style={{ opacity: i <= current ? 1 : 0.4 }}>{i <= current ? "❤️" : "🤍"}</span>))}</div>); }
-function SparkleBurst() {
-  const dots = Array.from({ length: 10 });
-  return (<div className="sparkle-wrap">{dots.map((_, i) => (<span key={i} className="sparkle-item" style={{ transform: `rotate(${i * 36}deg) translateY(-18px)`, animationDelay: `${i * 30}ms` }}>✨</span>))}</div>);
-}
-function Hearts({ show }) { if (!show) return null; const hearts = Array.from({ length: 24 }); return (<div className="hearts-fall">{hearts.map((_, i) => (<span key={i} className="fall-item" style={{ left: `${(i * 37) % 100}%`, top: `-${10 + (i % 5)}%`, animationDelay: `${(i % 10) * 0.15}s` }}>❤️</span>))}</div>); }
+function OSMMap({ center, zoom, children, onSimClick, simulate }) {
+  const wrapRef = useRef(null);
+  const { w, h } = useResize(wrapRef);
+  const cx = lon2x(center.lng, zoom), cy = lat2y(center.lat, zoom);
+  const originX = cx - w/2, originY = cy - h/2;
 
-/*************************
- * MAIN APP
- *************************/
-export default function AnniversaryTreasureHunt() {
-  const [started, setStarted] = useState(false);
-  const [currentIdx, setCurrentIdx] = useState(() => { const v = Number(getLS("ath_idx", "0")); return Number.isFinite(v) ? Math.min(v, STEPS.length - 1) : 0; });
-  const [hintRadius, setHintRadius] = useState(() => { const v = Number(getLS("ath_hint_radius", String(HINT_RADIUS_DEFAULT))); return Number.isFinite(v) ? v : HINT_RADIUS_DEFAULT; });
-  const [hint, setHint] = useState(false);
-  const [showModal, setShowModal] = useState(false);
-  const [simulate, setSimulate] = useState(false);
-  const [simPos, setSimPos] = useState(null);
+  const startX = Math.floor(originX/256), startY = Math.floor(originY/256);
+  const endX   = Math.floor((originX+w)/256), endY = Math.floor((originY+h)/256);
 
-  const { pos, error } = useGeolocation(started && !simulate);
-  const userPos = simulate ? simPos : pos;
+  const project   = (lat,lng)=>({ x: lon2x(lng,zoom)-originX, y: lat2y(lat,zoom)-originY });
+  const unproject = (x,y)=>({ lat: y2lat(y+originY,zoom),     lng: x2lon(x+originX,zoom) });
 
-  const step = STEPS[currentIdx];
-
-  // Loop progress state per step
-  const [loopVisited, setLoopVisited] = useState(() => new Set());
-  useEffect(() => {
-    if (step.type !== 'loop') { setLoopVisited(new Set()); return; }
-    const raw = getLS(`ath_loop_${currentIdx}`, "");
-    const s = new Set(raw ? raw.split(',').map((n) => Number(n)).filter(Number.isFinite) : []);
-    setLoopVisited(s);
-  }, [currentIdx, step.type]);
-
-  // Update loop progress when moving
-  useEffect(() => {
-    if (step.type !== 'loop' || !userPos) return;
-    const cps = makeLoopCheckpoints(step);
-    const newSet = new Set(loopVisited);
-    cps.forEach((cp, i) => {
-      if (!newSet.has(i)) {
-        if (distanceMeters(userPos, cp) <= step.hit_radius_m) newSet.add(i);
+  const tiles=[];
+  if (w>0 && h>0){
+    for (let ty=startY; ty<=endY; ty++){
+      for (let tx=startX; tx<=endX; tx++){
+        const px=tx*256-originX, py=ty*256-originY;
+        const n=2**zoom, nx=((tx%n)+n)%n; // wrap X
+        if (ty>=0 && ty<n){
+          tiles.push(
+            <img key={`${tx}_${ty}`} alt=""
+              src={`https://tile.openstreetmap.org/${zoom}/${nx}/${ty}.png`}
+              style={{position:"absolute",left:px,top:py,width:256,height:256}}
+              draggable={false} referrerPolicy="no-referrer" />
+          );
+        }
       }
-    });
-    if (newSet.size !== loopVisited.size) {
-      setLoopVisited(newSet);
-      setLS(`ath_loop_${currentIdx}`, Array.from(newSet).join(','));
     }
-  }, [userPos, step, currentIdx]);
-
-  // Derived gating
-  const pointDistance = step.type === 'point' ? distanceMeters(userPos, step.point) : Infinity;
-  const inPointRadius = step.type === 'point' ? canAdvancePoint(pointDistance) : false;
-  const cpsCount = step.type === 'loop' ? step.checkpoints : 0;
-  const cpsVisited = step.type === 'loop' ? loopVisited.size : 0;
-  const loopComplete = step.type === 'loop' ? (cpsVisited >= Math.ceil(step.require_ratio * step.checkpoints)) : false;
-  const canContinue = step.type === 'point' ? inPointRadius : loopComplete;
-
-  // Show modal when requirements first met
-  const prevOkRef = useRef(false);
-  useEffect(() => {
-    const okNow = canContinue;
-    if (okNow && !prevOkRef.current) {
-      setShowModal(true);
-      try { if (navigator?.vibrate) navigator.vibrate(80); } catch {}
-    }
-    prevOkRef.current = okNow;
-  }, [canContinue]);
-
-  // Persist UI prefs & step index
-  useEffect(() => setLS("ath_hint_radius", String(hintRadius)), [hintRadius]);
-  useEffect(() => setLS("ath_idx", String(currentIdx)), [currentIdx]);
-
-  // For the mini-map "visited path" we use each completed step's point/center
-  const visitedPoints = useMemo(() => STEPS.slice(0, currentIdx + 1).map((s) => (s.type === 'point' ? s.point : s.center)), [currentIdx]);
-
-  function onContinue() {
-    if (!canContinue) return;
-    setShowModal(false);
-    if (currentIdx < STEPS.length - 1) setCurrentIdx((i) => i + 1);
   }
-  function resetGame() {
-    setLS("ath_idx", "0");
-    for (let i = 0; i < STEPS.length; i++) setLS(`ath_loop_${i}`, "");
-    setCurrentIdx(0);
-    setShowModal(false);
-    setLoopVisited(new Set());
+
+  function handleClick(e){
+    if(!onSimClick) return;
+    const r = wrapRef.current.getBoundingClientRect();
+    onSimClick(unproject(e.clientX - r.left, e.clientY - r.top));
   }
 
   return (
-    <div className="app">
-      <style>{`
-        :root { --rose:#fda4af; --roseDeep:#fb7185; --txt:#111; --card:#ffffff; }
-        *{box-sizing:border-box} body{margin:0}
-        .app{width:100vw;height:100vh;position:relative;background:linear-gradient(135deg,#ffe4e6,#ffeef2);color:var(--txt);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,'Helvetica Neue','Arial',sans-serif}
-        .topbar{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px;z-index:10}
-        .pill{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.8);backdrop-filter:saturate(1.1) blur(4px);border-radius:16px;padding:6px 10px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
-        .label{font-size:12px}
-        .range{vertical-align:middle}
-        .btn{font-size:12px;padding:6px 10px;border-radius:9999px;border:1px solid #e5e7eb;background:#fff;cursor:pointer}
-        .btn.primary{background:#e11d48;color:#fff;border-color:#e11d48}
-        .btn.on{background:#6366f1;color:#fff;border-color:#6366f1}
-        .status{position:absolute;left:12px;right:12px;bottom:12px;z-index:10;display:flex;flex-direction:column;gap:8px}
-        .card{background:rgba(255,255,255,.9);backdrop-filter:saturate(1.1) blur(4px);border-radius:16px;padding:12px;box-shadow:0 10px 30px rgba(0,0,0,.12)}
-        .row{display:flex;align-items:center;justify-content:space-between}
-        .title{font-size:18px;font-weight:600}
-        .hearts{display:flex;align-items:center;gap:4px}
-        .start{width:100%;margin-top:8px}
-        .muted{opacity:.7;font-size:12px}
-        .map{width:100%;height:100%;border-radius:16px;box-shadow:0 6px 30px rgba(0,0,0,.12);border:1px solid #f3f4f6;background:linear-gradient(135deg,#fff1f2,#ffe4e6)}
-        .workspace{position:absolute;inset:0;padding:12px;padding-top:56px}
-        .modalWrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:20}
-        .backdrop{position:absolute;inset:0;background:rgba(0,0,0,.3)}
-        .modal{position:relative;background:#fff;border-radius:24px;padding:24px;max-width:480px;margin:0 16px;box-shadow:0 20px 60px rgba(0,0,0,.2);text-align:center}
-        .btnCont{margin-top:12px;display:flex;justify-content:center}
-        .btn.disabled{background:#fecdd3;color:#be123c;border-color:#fecdd3;cursor:not-allowed}
-        .mascot{position:absolute;left:12px;top:56px;z-index:11;user-select:none}
-        .bounce{font-size:28px;animation:bounce 1.2s infinite}
-        @keyframes bounce{50%{transform:translateY(-6px)}}
-        .sparkle-wrap{position:absolute;top:-16px;left:50%;transform:translateX(-50%)}
-        .sparkle-item{position:absolute;font-size:20px;animation:pop 700ms ease both}
-        @keyframes pop{0%{opacity:0;transform:scale(.5) translateY(0)}60%{opacity:1}100%{opacity:0;transform:scale(1.2) translateY(-8px)}}
-        .hearts-fall{pointer-events:none;position:fixed;inset:0;overflow:hidden;z-index:30}
-        .fall-item{position:absolute;font-size:22px;animation:fall 4.8s linear forwards}
-        @keyframes fall{to{transform:translateY(120vh) rotate(360deg);opacity:.9}}
-        .sparkle{opacity:.6;animation:pulse 1.6s ease-out infinite}
-        @keyframes pulse{0%{transform:scale(.7);opacity:.6}70%{transform:scale(1);opacity:.1}100%{opacity:0}}
-      `}</style>
-
-      <MascotHeart />
-
-      {/* Top Bar */}
-      <div className="topbar">
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 22 }}>✨💘</span>
-          <div className="title">Love Quest: 1‑Year Edition</div>
-        </div>
-        <div className="pill">
-          {step.type === 'point' && (<>
-            <span className="label">Hint radius</span>
-            <input className="range" type="range" min={10} max={150} step={5} value={hintRadius} onChange={(e) => setHintRadius(Number(e.target.value))} />
-            <span className="label" style={{ width: 36, textAlign: "right" }}>{hintRadius}m</span>
-            <button onClick={() => setHint((v) => !v)} className="btn" title="Show sparkly hint">Sparkle ✨</button>
-          </>)}
-          <button onClick={() => setSimulate((s) => !s)} className={`btn ${simulate ? "on" : ""}`} title="Tap map to pretend">Magic tap 🪄</button>
-          <button onClick={resetGame} className="btn" title="Reset progress to the beginning">Time machine ⏪</button>
-        </div>
+    <div ref={wrapRef} onClick={handleClick}
+      style={{
+        position:"relative", width:"100%", height:"100%", overflow:"hidden",
+        borderRadius:18, background:"#dfe7ef", cursor: simulate ? "crosshair" : "default"
+      }}>
+      <div style={{ position:"absolute", inset:0 }}>{tiles}</div>
+      <svg viewBox={`0 0 ${w||1} ${h||1}`} style={{ position:"absolute", inset:0, pointerEvents:"none" }}>
+        {w&&h ? children({ project, unproject, size:{w,h} }) : null}
+      </svg>
+      <div style={{ position:"absolute", right:8, bottom:8, background:"rgba(255,255,255,.85)", padding:"2px 6px",
+        borderRadius:6, fontSize:10, pointerEvents:"auto" }}>
+        © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors
       </div>
-
-      {/* Status Card */}
-      <div className="status">
-        <div className="card">
-          <div className="row">
-            <div style={{ fontSize: 14 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
-                <span>Step {currentIdx + 1} / {STEPS.length}</span>
-                <ProgressHearts total={STEPS.length} current={currentIdx} />
-              </div>
-              <div className="muted">{step.label}</div>
-            </div>
-            <div style={{ textAlign: "right" }}>
-              {step.type === 'point' ? (
-                <>
-                  <div style={{ fontSize: 22, fontWeight: 700 }}>{Number.isFinite(pointDistance) ? Math.max(0, Math.round(pointDistance)) : "—"} m</div>
-                  <div className="muted">{heatWord(pointDistance, hintRadius)} (gate {GATE_RADIUS}m)</div>
-                </>
-              ) : (
-                <>
-                  <div style={{ fontSize: 22, fontWeight: 700 }}>{cpsVisited} / {cpsCount}</div>
-                  <div className="muted">lake loop checkpoints</div>
-                </>
-              )}
-            </div>
-          </div>
-          {!started && (
-            <button onClick={() => setStarted(true)} className="btn primary start">Start the Love Quest 💞</button>
-          )}
-          {error && (
-            <div className="muted" style={{ color: "#b91c1c", marginTop: 6 }}>{error} {simulate ? "(Simulation enabled)" : "— try Magic tap."}</div>
-          )}
-        </div>
-      </div>
-
-      {/* Mini Map Area */}
-      <div className="workspace">
-        <MiniMap
-          points={visitedPoints}
-          you={userPos}
-          hintRadius={hintRadius}
-          onSimClick={simulate ? setSimPos : null}
-          showHint={hint}
-          pointTarget={step.type === 'point' ? step.point : null}
-          loopInfo={step.type === 'loop' ? { ...step, visited: loopVisited } : null}
-        />
-      </div>
-
-      {/* Modal */}
-      {showModal && (
-        <div className="modalWrap">
-          <div className="backdrop" onClick={() => setShowModal(false)} />
-          <div className="modal">
-            <SparkleBurst />
-            <div style={{ fontSize: 46, marginBottom: 8 }}>🎁</div>
-            <h2 style={{ fontSize: 20, margin: 0, fontWeight: 600 }}>Treasure found!</h2>
-            <p style={{ color: "#be123c", fontSize: 18, fontWeight: 600, margin: "6px 0" }}>{step.message || "Love you 💖"}</p>
-            <p className="muted">{currentIdx < STEPS.length - 1 ? (step.type === 'loop' ? "You walked the lake! The next heart appears." : "A new heart just appeared on the map!") : "Final hug unlocked. Happy anniversary! 🥳"}</p>
-            <div className="btnCont">
-              <button onClick={onContinue} disabled={!canContinue} className={`btn ${canContinue ? "primary" : "disabled"}`}>Continue ➜</button>
-            </div>
-            {!canContinue && (<div className="muted" style={{ marginTop: 6 }}>{step.type === 'loop' ? `Visit ${Math.ceil(step.require_ratio * step.checkpoints)} hearts around the lake to unlock.` : `Get within ${GATE_RADIUS}m to unlock Continue.`}</div>)}
-          </div>
-        </div>
-      )}
-
-      {/* Confetti hearts */}
-      <Hearts show={showModal && canContinue} />
     </div>
   );
 }
 
-/*************************
- * SELF‑TESTS (console only)
- *************************/
-function approxEq(a, b, tol = 2) { return Math.abs(a - b) <= tol; }
-function runSelfTests() {
-  const A = { lat: 10.803656578664285, lng: 106.7329434561889 };
-  const B = { lat: 10.803656578664285, lng: 106.7329434561889 };
-  const C = { lat: A.lat + 0.001, lng: A.lng }; // ~111 m north
-  const D = { lat: A.lat, lng: A.lng + 0.001 }; // ~cos(lat)*111 m east
-  const dAB = distanceMeters(A, B); const dAC = distanceMeters(A, C); const dCA = distanceMeters(C, A); const dAD = distanceMeters(A, D);
-  const ok1 = approxEq(dAB, 0, 1); const ok2 = approxEq(dAC, 111, 5); const ok3 = approxEq(dAC, dCA, 0.5); const ok4 = dAD > 0 && dAD < 111 * 1.1; const ok5 = canAdvancePoint(99.9) && !canAdvancePoint(100.1);
-  const proj = makeProjector(A); const round = proj.unproject(proj.project(C)); const ok6 = distanceMeters(C, round) < 1; const mid = { lat: (A.lat + C.lat) / 2, lng: A.lng }; const ok7 = distanceMeters(mid, C) < distanceMeters(A, C);
-  const ok8 = distanceMeters(null, C) === Infinity && distanceMeters(A, null) === Infinity;
-  console.log('[Self‑tests]', { ok1, ok2, ok3, ok4, ok5, ok6, ok7, ok8, allOK: ok1 && ok2 && ok3 && ok4 && ok5 && ok6 && ok7 && ok8 });
+/* ================= MAIN APP ================= */
+
+export default function AnniversaryTimeline(){
+  // iOS vh fix
+  useEffect(()=>{ const setVH=()=>document.documentElement.style.setProperty("--vh", String(window.innerHeight*0.01));
+    // eslint-disable-next-line no-restricted-globals
+    setVH(); addEventListener("resize", setVH); return ()=>removeEventListener("resize", setVH); },[]);
+
+  const [eventIdx,setEventIdx]   = useState(load("ath_event", 0));
+  const [position,setPosition]   = useState(load("ath_pos", null));
+  const [simulate,setSimulate]   = useState(false);
+  const [hintRadius,setHint]     = useState(30); // smaller by default
+  const [lakeVisited,setLV]      = useState(load("ath_lakeVisited", []));
+  const [check11,setCheck11]     = useState(load("ath_check11", Array.from({length:11},()=>false)));
+  const [pellets,setPellets]     = useState(load("ath_pellets", 0));
+  const [voucher,setVoucher]     = useState(load("ath_voucher", false));
+  const [denied,setDenied]       = useState(false);
+  const [toast,setToast]         = useState("");
+
+  const current = EVENTS[eventIdx];
+
+  // GPS
+  const watchRef = useRef(null);
+  useEffect(() => {
+    if (!navigator.geolocation) { setDenied(true); return; }
+    if (watchRef.current != null) return;
+    const id = navigator.geolocation.watchPosition(
+      p=>{ const pos={lat:p.coords.latitude, lng:p.coords.longitude}; setPosition(pos); save("ath_pos",pos); setDenied(false); },
+      ()=>setDenied(true),
+      { enableHighAccuracy:true, maximumAge:2000, timeout:10000 }
+    );
+    watchRef.current = id;
+    return () => { if (id != null) navigator.geolocation.clearWatch(id); };
+  }, []);
+
+  // Oval checkpoints (meters → lat/lng → projected later)
+  const ovalDotsLL = useMemo(()=>{
+    const θ = toRad(OVAL.rotationDeg);
+    const cosθ = Math.cos(θ), sinθ = Math.sin(θ);
+    const dots = [];
+    for (let i=0;i<OVAL.checkpoints;i++){
+      const t = (i/OVAL.checkpoints)*2*Math.PI;
+      const x = OVAL.aM * Math.cos(t);
+      const y = OVAL.bM * Math.sin(t);
+      const xr =  x*cosθ - y*sinθ;
+      const yr =  x*sinθ + y*cosθ;
+      dots.push(metersToOffsetLL(LAKE_CENTER, xr, yr));
+    }
+    return dots;
+  }, []);
+
+  // Track visited dots live
+  useEffect(()=>{ if(!position) return;
+    const hits=new Set(lakeVisited);
+    ovalDotsLL.forEach((pt,i)=>{ if(distanceM(position, pt) <= GATE_M) hits.add(i); });
+    if(hits.size !== lakeVisited.length){ const arr=[...hits]; setLV(arr); save("ath_lakeVisited", arr); }
+  }, [position]);
+
+  // Point-in-oval test (meters)
+  function insideOval(pt){
+    const { dx, dy } = llToMetersOffset(LAKE_CENTER, pt);
+    const θ = toRad(-OVAL.rotationDeg);
+    const cosθ = Math.cos(θ), sinθ = Math.sin(θ);
+    const xr = dx*cosθ - dy*sinθ;
+    const yr = dx*sinθ + dy*cosθ;
+    return (xr*xr)/(OVAL.aM*OVAL.aM) + (yr*yr)/(OVAL.bM*OVAL.bM) <= 1.05; // small margin
+  }
+
+  // Gates
+  function gateOf(e){
+    switch(e.id){
+      case "intro":        return { ok:true,  text:"ready" };
+      case "reachL1": {    const d=Math.round(distanceM(position,L1_TARGET)); return { ok:d<=GATE_M, text:isFinite(d)?`${d} m`:"—" }; }
+      case "startL1":      return { ok:true,  text:"begin" };
+      case "checklist11": { const c=check11.filter(Boolean).length; return { ok:c===11, text:`${c}/11` }; }
+      case "checklistPass":return { ok:true,  text:"done" };
+      case "revealL2":     return { ok:true,  text:"revealed" };
+      case "arriveL2":     return { ok: position ? insideOval(position) : false, text: position ? "near the ring" : "—" };
+      case "snacks":       return { ok:true,  text:"snack time" };
+      case "feedFish":     return { ok:pellets>=10, text:`${pellets}/10 pellets` };
+      case "walkLake":   { const need=OVAL.require; return { ok:lakeVisited.length>=need, text:`${lakeVisited.length}/${OVAL.checkpoints} dots` }; }
+      case "finishL2":     return { ok:true,  text:"finished" };
+      case "congrats":     return { ok:true,  text:"congrats" };
+      case "voucher":      return { ok:voucher, text: voucher ? "collected" : "tap to collect" };
+      default:             return { ok:false, text:"—" };
+    }
+  }
+  const gate = gateOf(current);
+
+  // Nav
+  const goPrev = ()=>{ const i=Math.max(0,eventIdx-1); setEventIdx(i); save("ath_event",i); };
+  const goNext = ()=>{ const i=Math.min(EVENTS.length-1,eventIdx+1); setEventIdx(i); save("ath_event",i); };
+  const onContinue = ()=>{ if(!gate.ok) return; goNext(); };
+
+  // Map mode
+  const lakeVisibleFromIndex = EVENTS.findIndex(e=>e.id==="revealL2");
+  const showLake = eventIdx >= lakeVisibleFromIndex;
+  const mapCenter = showLake ? LAKE_CENTER : (position || L1_TARGET);
+  const zoom = 17;
+
+  function claimVoucher(){ if(voucher) return; setVoucher(true); save("ath_voucher", true); navigator.vibrate?.(40); }
+
+  function resetAll(){
+    setEventIdx(0); save("ath_event",0);
+    setLV([]); save("ath_lakeVisited",[]);
+    setCheck11(Array.from({length:11},()=>false)); save("ath_check11",Array.from({length:11},()=>false));
+    setPellets(0); save("ath_pellets",0);
+    setVoucher(false); save("ath_voucher",false);
+    setPosition(null); save("ath_pos",null);
+  }
+
+  useEffect(()=>{ if(simulate){ setToast("Simulate on — tap map to move"); const t=setTimeout(()=>setToast(""),1600); return ()=>clearTimeout(t); } },[simulate]);
+
+  return (
+    <div style={{
+      minHeight:"calc(var(--vh,1vh)*100)", display:"flex", flexDirection:"column", gap:10,
+      padding:"env(safe-area-inset-top) 8px calc(env(safe-area-inset-bottom) + 8px)"
+    }}>
+      {/* Top bar */}
+      <div style={{ display:"flex", alignItems:"center", gap:8, justifyContent:"center", position:"sticky", top:0, zIndex:10 }}>
+        <div style={{display:"flex", alignItems:"center", gap:10, background:"rgba(255,255,255,.9)", padding:"8px 12px",
+          borderRadius:16, boxShadow:"0 8px 30px rgba(0,0,0,.12)"}}>
+          <span>{EVENTS.map((_,i)=> i<eventIdx ? "❤️ " : i===eventIdx ? "💗" : "🤍").join("")}</span>
+          <span style={{fontWeight:800}}>{current.title}</span>
+          {current.id==="reachL1" && (
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <span className={gate.ok ? "" : "blink"} style={{fontWeight:800}}>{gate.text}</span>
+              <input title="hint radius" type="range" min={10} max={70} step={5}
+                value={hintRadius} onChange={(e)=>setHint(+e.target.value)} />
+            </div>
+          )}
+          {current.id==="walkLake" && <span style={{fontWeight:800}}>{gate.text}</span>}
+          {current.id==="feedFish" && <span style={{fontWeight:800}}>{gate.text}</span>}
+          <button onClick={onContinue} disabled={!gate.ok}
+            style={{background:gate.ok?"linear-gradient(180deg,#ffd1df,#ffb8cd)":"#f0f0f0", color:gate.ok?"#8c0c3a":"#777",
+              border:"none", padding:"8px 12px", borderRadius:12, fontWeight:800}}>Continue ➡️</button>
+        </div>
+        <div style={{display:"flex",gap:8, marginLeft:8}}>
+          <button className="pill" onClick={goPrev} title="Previous">◀</button>
+          <button className="pill" onClick={goNext} title="Next">▶</button>
+          <button className="pill" onClick={()=>setSimulate(s=>!s)} title="Simulate">🪄</button>
+          <button className="pill" onClick={resetAll} title="Reset">«</button>
+        </div>
+      </div>
+
+      {denied && <div style={{textAlign:"center",fontSize:12,color:"#444"}}>Location blocked — toggle <b>🪄</b> and tap the map to move.</div>}
+      {toast && <div style={{textAlign:"center",fontSize:12,color:"#1b418e"}}>{toast}</div>}
+
+      {/* MAP */}
+      <div style={{ position:"relative", flex:"1 1 auto", height:"max(70vh, 420px)" }}>
+        <OSMMap
+          center={mapCenter}
+          zoom={zoom}
+          simulate={simulate}
+          onSimClick={simulate ? (ll)=>{ setPosition(ll); save("ath_pos", ll); } : null}
+        >
+          {({ project })=>{
+            const els=[];
+            // L1 visuals: goal + hint ring
+            if(!showLake){
+              const T=project(L1_TARGET.lat, L1_TARGET.lng);
+              const mpp=(40075016.686*Math.abs(Math.cos(toRad(L1_TARGET.lat))))/(256*2**zoom);
+              const px=(m)=>m/mpp;
+              const rHint=px(hintRadius), rGate=px(GATE_M);
+              els.push(<circle key="hint" cx={T.x} cy={T.y} r={rHint} fill="none" stroke="rgba(255,77,122,.35)" strokeDasharray="6 6" />);
+              els.push(<circle key="gate" cx={T.x} cy={T.y} r={rGate} fill="rgba(255,77,122,.12)" stroke="#ffb3c7" />);
+              els.push(<circle key="target" cx={T.x} cy={T.y} r={9} fill="#ff4d7a" />);
+              els.push(<text key="tlabel" x={T.x} y={T.y-(rGate+10)} textAnchor="middle" fontSize="11" fill="#b31249" style={{pointerEvents:"none"}}>goal ♥</text>);
+              for(let i=0;i<14;i++){ const a=(i/14)*2*Math.PI; const x=T.x+rHint*Math.cos(a), y=T.y+rHint*Math.sin(a);
+                els.push(<circle key={`sp${i}`} className="twinkle" cx={x} cy={y} r={3} fill="rgba(255,215,234,.95)" />); }
+            }
+
+            // L2 visuals: rotated ellipse + dots
+            if(showLake){
+              const C=project(LAKE_CENTER.lat, LAKE_CENTER.lng);
+              // radii in pixels via meter offsets to LL then project (avoids Mercator pitfall)
+              const A = project(...Object.values(metersToOffsetLL(LAKE_CENTER, OVAL.aM, 0)));
+              const B = project(...Object.values(metersToOffsetLL(LAKE_CENTER, 0, OVAL.bM)));
+              const rx = Math.abs(A.x - C.x), ry = Math.abs(B.y - C.y);
+              els.push(
+                <ellipse key="oval-fill" cx={C.x} cy={C.y} rx={rx} ry={ry}
+                  transform={`rotate(${OVAL.rotationDeg} ${C.x} ${C.y})`}
+                  fill="rgba(45,108,223,.06)"/>
+              );
+              els.push(
+                <ellipse key="oval-stroke" cx={C.x} cy={C.y} rx={rx} ry={ry}
+                  transform={`rotate(${OVAL.rotationDeg} ${C.x} ${C.y})`}
+                  fill="none" stroke="rgba(45,108,223,.45)" strokeDasharray="8 10" className="dash-animate"/>
+              );
+              els.push(<text key="llabel" x={C.x} y={C.y-(ry+10)} textAnchor="middle" fontSize="11" fill="#1b418e" style={{pointerEvents:"none"}}>follow the ring ✨</text>);
+              for(let i=0;i<OVAL.checkpoints;i++){
+                const ll = ovalDotsLL[i];
+                const P = project(ll.lat, ll.lng);
+                const visited = lakeVisited.includes(i);
+                els.push(<circle key={`d${i}`} cx={P.x} cy={P.y} r={7} fill={visited?"#21a67a":"#2d6cdf"} stroke={visited?"#157f5c":"#1b418e"} />);
+                if(i===0) els.push(<text key="need" x={C.x} y={C.y+ry+16} textAnchor="middle" fontSize="11" fill="#333" style={{pointerEvents:"none"}}>{lakeVisited.length}/{OVAL.checkpoints} (need {OVAL.require})</text>);
+              }
+            }
+
+            // You
+            if(position){ const P=project(position.lat,position.lng);
+              els.push(<circle key="me" cx={P.x} cy={P.y} r={7} fill="#2d6cdf" stroke="#1b418e" />);
+              els.push(<text key="mel" x={P.x} y={P.y-14} textAnchor="middle" fontSize="11" fill="#1b418e" style={{pointerEvents:"none"}}>you</text>);
+            }
+            return els;
+          }}
+        </OSMMap>
+
+        {/* Event panels */}
+        {current.kind==="intro" && <IntroCard onBegin={onContinue} />}
+        {current.kind==="modal" && (
+          <CenterCard>
+            <h2 style={{margin:"6px 0"}}>{current.title}</h2>
+            <p style={{color:"#666"}}>{current.text}</p>
+            <button className="pill" onClick={onContinue}
+              style={{background:"linear-gradient(180deg,#ffd1df,#ffb8cd)", color:"#8c0c3a", border:"none"}}>Continue 💘</button>
+          </CenterCard>
+        )}
+        {current.kind==="checklist" && (
+          <CenterCard>
+            <h2 style={{margin:"6px 0"}}>11 items checklist</h2>
+            <p style={{color:"#666"}}>Tick everything we shared that night.</p>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,textAlign:"left"}}>
+              {check11.map((v,i)=>(
+                <label key={i} style={{display:"flex",gap:8,alignItems:"center",padding:"8px 10px",border:"1px solid #eee",borderRadius:12}}>
+                  <input type="checkbox" checked={!!v} onChange={()=>{ const c=[...check11]; c[i]=!c[i]; setCheck11(c); save("ath_check11",c); }} />
+                  <span>Item #{i+1}</span>
+                </label>
+              ))}
+            </div>
+            <div style={{marginTop:10}}>
+              <button className="pill" onClick={onContinue} disabled={!gate.ok}
+                style={{background:gate.ok?"linear-gradient(180deg,#ffd1df,#ffb8cd)":"#f0f0f0", color:gate.ok?"#8c0c3a":"#777", border:"none"}}>
+                Continue ({gate.text})
+              </button>
+            </div>
+          </CenterCard>
+        )}
+        {current.kind==="mini" && (
+          <CenterCard>
+            <h2 style={{margin:"6px 0"}}>Feed the fish 🐟</h2>
+            <p style={{color:"#666"}}>{EVENTS.find(e=>e.id==="feedFish").text}</p>
+            <div style={{fontSize:20, margin:"8px 0"}}>{"🟤".repeat(Math.min(10,pellets))}</div>
+            <div style={{display:"flex",gap:8,justifyContent:"center"}}>
+              <button className="pill" onClick={()=>{ const n=Math.min(10,pellets+1); setPellets(n); save("ath_pellets",n); }}>Drop pellet</button>
+              <button className="pill" onClick={()=>{ setPellets(0); save("ath_pellets",0); }}>Reset</button>
+            </div>
+            <div style={{marginTop:10}}>
+              <button className="pill" onClick={onContinue} disabled={!gate.ok}
+                style={{background:gate.ok?"linear-gradient(180deg,#ffd1df,#ffb8cd)":"#f0f0f0", color:gate.ok?"#8c0c3a":"#777", border:"none"}}>
+                Continue ({gate.text})
+              </button>
+            </div>
+          </CenterCard>
+        )}
+        {current.kind==="task" && (
+          <CornerNote>Grab snacks nearby. When ready, hit Continue.</CornerNote>
+        )}
+        {current.kind==="reward" && (
+          <CenterCard>
+            <h2 style={{margin:"6px 0"}}>Gift Voucher 🎟️</h2>
+            {!voucher ? (
+              <>
+                <p style={{color:"#666"}}>You won! Tap to collect.</p>
+                <button className="pill" onClick={claimVoucher}
+                  style={{background:"linear-gradient(180deg,#ffd1df,#ffb8cd)", color:"#8c0c3a", border:"none"}}>Collect 💖</button>
+              </>
+            ) : (
+              <p style={{color:"#666"}}>Voucher collected. I owe you one perfect date. ✨</p>
+            )}
+            <div style={{marginTop:8}}>
+              <button className="pill" onClick={onContinue} style={{border:"none"}}>Finish ➡️</button>
+            </div>
+          </CenterCard>
+        )}
+      </div>
+
+      {/* Styles */}
+      <style>{`
+        .pill{border:1px solid rgba(0,0,0,.08);background:#fff;padding:8px 12px;border-radius:999px;font-weight:700;box-shadow:0 6px 20px rgba(0,0,0,.06);cursor:pointer}
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+        .blink{ animation: blink 1.2s ease-in-out infinite; }
+        @keyframes twinkle { 0%,100%{opacity:.2; transform:scale(1)} 50%{opacity:1; transform:scale(1.6)} }
+        .twinkle{ animation: twinkle 2.0s ease-in-out infinite; }
+        .twinkle:nth-of-type(3n){ animation-duration: 1.5s; }
+        .twinkle:nth-of-type(4n){ animation-duration: 2.7s; }
+        @keyframes dash { to { stroke-dashoffset: -180; } }
+        .dash-animate{ animation: dash 6s linear infinite; }
+      `}</style>
+    </div>
+  );
 }
-runSelfTests();
+
+/* ================= UI Bits ================= */
+
+function CenterCard({ children }) {
+  return (
+    <div style={{ position:"absolute", inset:0, background:"rgba(0,0,0,.35)",
+      display:"flex", alignItems:"center", justifyContent:"center", padding:12 }}>
+      <div style={{ background:"#fff", borderRadius:20, padding:18, width:"min(480px,100%)",
+        textAlign:"center", boxShadow:"0 10px 40px rgba(0,0,0,.25)" }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function CornerNote({ children }) {
+  return (
+    <div style={{ position:"absolute", right:12, bottom:12, background:"rgba(255,255,255,.9)",
+      borderRadius:12, padding:"8px 10px", boxShadow:"0 6px 20px rgba(0,0,0,.12)", maxWidth:280 }}>
+      {children}
+    </div>
+  );
+}
+
+function IntroCard({ onBegin }) {
+  return (
+    <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+      <div style={{
+        width: 280, height: 420, borderRadius: 16, background:"#fff",
+        boxShadow:"0 18px 60px rgba(0,0,0,.2)", position:"relative"
+      }}>
+        {/* Corners */}
+        <div style={{ position:"absolute", top:10, left:10, textAlign:"left", lineHeight:1.1 }}>
+          <div style={{ fontWeight:800, fontFamily:"ui-monospace,monospace" }}>&lt;3</div>
+          <div style={{ color:"#c40a4d", fontSize:20 }}>♥</div>
+        </div>
+        <div style={{ position:"absolute", bottom:10, right:10, textAlign:"right", lineHeight:1.1, transform:"rotate(180deg)" }}>
+          <div style={{ fontWeight:800, fontFamily:"ui-monospace,monospace" }}>&lt;3</div>
+          <div style={{ color:"#c40a4d", fontSize:20 }}>♥</div>
+        </div>
+        {/* Middle pips */}
+        <div style={{ position:"absolute", inset:0, display:"grid", placeItems:"center" }}>
+          <div style={{ fontSize:60, color:"#c40a4d" }}>♥</div>
+          <div style={{ position:"absolute", top:80, left:60, fontSize:40, color:"#c40a4d" }}>♥</div>
+          <div style={{ position:"absolute", bottom:80, right:60, fontSize:40, color:"#c40a4d", transform:"rotate(180deg)" }}>♥</div>
+        </div>
+        {/* Copy */}
+        <div style={{ position:"absolute", left:0, right:0, bottom:60, textAlign:"center", padding:"0 16px" }}>
+          <div style={{ fontWeight:800 }}>Heart Trial</div>
+          <div style={{ fontSize:12, color:"#555", marginTop:6 }}>Beat the clues, win a gift voucher.</div>
+        </div>
+        <div style={{ position:"absolute", left:0, right:0, bottom:16, textAlign:"center" }}>
+          <button className="pill" onClick={onBegin}
+            style={{ background:"linear-gradient(180deg,#ffd1df,#ffb8cd)", color:"#8c0c3a", border:"none" }}>
+            Begin 💘
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================= Console Tests ================= */
+(function tests(){
+  const assert=(c,m)=>{ if(!c) console.error("❌",m); else console.log("✅",m); };
+  const a={lat:10,lng:10}, b={lat:11,lng:12};
+  assert(Math.abs(distanceM(a,b)-distanceM(b,a))<1e-6,"haversine symmetry");
+  assert(Math.round(distanceM(a,a))===0,"zero distance");
+  const z=16, x=lon2x(a.lng,z), y=lat2y(a.lat,z);
+  assert(Math.abs(a.lng-x2lon(x,z))<1e-6 && Math.abs(a.lat-y2lat(y,z))<1e-6,"mercator invert");
+
+  // Oval math sanity: center -> offset round-trip
+  const off = metersToOffsetLL(LAKE_CENTER, 100, -50);
+  const {dx,dy} = llToMetersOffset(LAKE_CENTER, off);
+  assert(Math.abs(dx-100)<0.5 && Math.abs(dy+50)<0.5, "meters<->LL roundtrip");
+
+  // Gate 7 m
+  const t={lat:10,lng:10}, inside={lat:10+(GATE_M/111111),lng:10}, outside={lat:10+((GATE_M+1)/111111),lng:10};
+  const dIn=Math.round(distanceM(t,inside)), dOut=Math.round(distanceM(t,outside));
+  assert(dIn<=GATE_M,"≤7m gate"); assert(dOut>GATE_M,">7m outside");
+})();
