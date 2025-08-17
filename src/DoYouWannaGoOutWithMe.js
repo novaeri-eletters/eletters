@@ -111,7 +111,7 @@ const SummerTriangleInvite = () => {
 
   return (
     <div style={styles.container} onMouseMove={handleMouseMove}>
-      <h1 style={styles.headerText}>Deneb, Altair, and Vega invited you to visit the Summer Triangle!</h1>
+      <h1 style={styles.headerText}>Deneb, Minh, and Vega invited you to visit the Summer Triangle!</h1>
       <img
         src="https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExcDdtZ2JiZDR0a3lvMWF4OG8yc3p6Ymdvd3g2d245amdveDhyYmx6eCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/cLS1cfxvGOPVpf9g3y/giphy.gif"
         alt="Cute animated illustration"
@@ -127,7 +127,7 @@ const SummerTriangleInvite = () => {
             }
           }}
         >
-          Yes
+          Đi
         </button>
 
         {showSecondYes ? (
@@ -140,7 +140,7 @@ const SummerTriangleInvite = () => {
             }}
             onClick={handleYesClick}
           >
-            Yes 😌
+            Đi 😌
           </button>
         ) : (
           <button
@@ -153,7 +153,7 @@ const SummerTriangleInvite = () => {
             onMouseOver={moveButton}
             className={shatter ? "shatter" : ""} // Add shattering effect class
           >
-            No
+            Hong đi
           </button>
         )}
       </div>
@@ -179,7 +179,7 @@ const SummerTriangleInvite = () => {
 
       <div style={styles.heartContainer}>
         <iframe
-          src="/heart.html"
+          src="./heart.html"
           style={styles.iframe}
           title="Heart Effect"
         ></iframe>

@@ -1,0 +1,606 @@
+/* Base Styles */
+.garden-container {
+  min-height: 100vh;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(180deg, #87CEEB 0%, #E0F6FF 100%);
+  font-family: 'Dancing Script', cursive;
+}
+
+.sky-background {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+}
+
+.cloud {
+  position: absolute;
+  background: rgba(255,255,255,0.9);
+  border-radius: 50px;
+  animation: float 20s infinite linear;
+}
+
+.cloud-1 {
+  width: 120px;
+  height: 40px;
+  top: 20%;
+  left: -150px;
+  animation-delay: 0s;
+}
+
+.cloud-2 {
+  width: 180px;
+  height: 60px;
+  top: 35%;
+  right: -200px;
+  animation-delay: 5s;
+}
+
+.cloud-3 {
+  width: 160px;
+  height: 50px;
+  top: 50%;
+  left: -180px;
+  animation-delay: 8s;
+}
+
+.cloud-4 {
+  width: 140px;
+  height: 45px;
+  top: 60%;
+  right: -160px;
+  animation-delay: 12s;
+}
+
+.grass-layer {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  height: 160px;
+  background: linear-gradient(180deg, #6daa4d 0%, #4a7b35 100%);
+  box-shadow: inset 0 10px 20px rgba(0,0,0,0.1);
+  z-index: 1;
+}
+
+/* Butterfly styles */
+.butterfly {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  animation: butterflyFlight 15s infinite linear;
+  z-index: 5;
+}
+
+.wing {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(45deg, #ff69b4, #ff99cc);
+  border-radius: 50% 50% 50% 50%;
+  clip-path: polygon(0 0, 100% 0, 100% 70%, 0 70%);
+}
+
+.wing.left {
+  transform: rotate(45deg);
+  animation: flapLeft 0.4s infinite alternate;
+}
+
+.wing.right {
+  transform: rotate(-45deg);
+  animation: flapRight 0.4s infinite alternate;
+}
+
+/* Bee styles */
+.bee {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  background: #ffd700;
+  border-radius: 50%;
+  animation: beeFlight 12s infinite linear;
+  z-index: 5;
+}
+
+.bee-stripe {
+  position: absolute;
+  width: 100%;
+  height: 20%;
+  background: #000;
+}
+
+.bee-stripe:nth-child(1) { top: 20%; }
+.bee-stripe:nth-child(2) { top: 50%; }
+.bee-stripe:nth-child(3) { top: 80%; }
+
+/* Cat styles */
+.cat {
+  position: absolute;
+  font-size: 2.5rem;
+  z-index: 3;
+  filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.2));
+  animation: catBounce 3s infinite ease-in-out;
+}
+
+.sitting-cat { transform: scaleX(-1); }
+.walking-cat { animation: catWalk 5s infinite linear; }
+
+/* Animations */
+@keyframes butterflyFlight {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  25% { transform: translate(100px, 50px) rotate(15deg); }
+  50% { transform: translate(200px, -30px) rotate(-15deg); }
+  75% { transform: translate(300px, 80px) rotate(10deg); }
+  100% { transform: translate(400px, 0) rotate(0deg); }
+}
+
+@keyframes flapLeft {
+  from { transform: rotate(35deg); }
+  to { transform: rotate(55deg); }
+}
+
+@keyframes flapRight {
+  from { transform: rotate(-35deg); }
+  to { transform: rotate(-55deg); }
+}
+
+@keyframes beeFlight {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  25% { transform: translate(50px, 30px) rotate(10deg); }
+  50% { transform: translate(100px, -20px) rotate(-10deg); }
+  75% { transform: translate(150px, 40px) rotate(5deg); }
+  100% { transform: translate(200px, 0) rotate(0deg); }
+}
+
+@keyframes catBounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes catWalk {
+  0% { right: -50px; }
+  100% { right: 110%; }
+}
+
+/* Keep all your existing CSS below this point */
+/* ... (all your original styles remain unchanged) */
+
+/* Base Styles */
+.garden-container {
+  min-height: 100vh;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(180deg, #87CEEB 0%, #E0F6FF 100%);
+  font-family: 'Dancing Script', cursive;
+}
+
+.sky-background {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+}
+
+.cloud {
+  position: absolute;
+  background: rgba(255,255,255,0.9);
+  border-radius: 50px;
+  animation: float 20s infinite linear;
+}
+
+.cloud-1 {
+  width: 120px;
+  height: 40px;
+  top: 20%;
+  left: -150px;
+  animation-delay: 0s;
+}
+
+.cloud-2 {
+  width: 180px;
+  height: 60px;
+  top: 35%;
+  right: -200px;
+  animation-delay: 5s;
+}
+
+.grass-layer {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  height: 160px;
+  background: linear-gradient(180deg, #6daa4d 0%, #4a7b35 100%);
+  box-shadow: inset 0 10px 20px rgba(0,0,0,0.1);
+  z-index: 1;
+}
+
+.grass-layer::before {
+  content: '';
+  position: absolute;
+  top: -30px;
+  left: 0;
+  right: 0;
+  height: 60px;
+  background: repeating-linear-gradient(
+    90deg,
+    #fff 0px, #fff 10px,
+    transparent 10px, transparent 20px
+  );
+  clip-path: polygon(0% 100%, 100% 100%, 100% 30px, 0% 0%);
+  z-index: 2;
+}
+
+.grass-layer::after {
+  content: '';
+  position: absolute;
+  top: -40px;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="%23558B2F"/></svg>');
+  opacity: 0.3;
+  z-index: 1;
+}
+
+.garden-title {
+  font-size: 2.5rem;
+  color: #5e2a34;
+  text-shadow: 2px 2px 4px rgba(255,255,255,0.3);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 2rem 0;
+  z-index: 2;
+  position: relative;
+  justify-content: center;
+  padding-left: 5px;
+}
+
+.flower-garden {
+  position: absolute;
+  width: 100%;
+  height: calc(100% - 150px);
+  bottom: 140px;
+}
+
+.flower-plant {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform-origin: bottom;
+  bottom: 0;
+}
+
+.rose-stem {
+  position: absolute;
+  bottom: -100%;
+  left: 50%;
+  transform: translateX(-50%) rotate(2deg);
+  width: 4px;
+  height: 100%;
+  background: linear-gradient(to right, #2d5a27 0%, #3d7d47 100%);
+  z-index: -1;
+}
+
+.flower-button {
+  width: 80px;
+  height: 80px;
+  border: none;
+  cursor: pointer;
+  background: transparent;
+  position: relative;
+  transition: all 0.3s ease;
+  transform-origin: bottom;
+}
+
+.flower-button:not(.bloomed-flower):hover {
+  animation: flowerHover 1.2s ease-in-out infinite;
+  filter: brightness(1.1);
+}
+
+@keyframes flowerHover {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-8px) rotate(-3deg); }
+}
+
+.petals {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.petal {
+  position: absolute;
+  background: #FF4081;
+  width: 40px;
+  height: 60px;
+  border-radius: 50%;
+  transform-origin: bottom center;
+}
+
+.p1 { transform: rotate(0deg) translateY(-10px); }
+.p2 { transform: rotate(72deg) translateY(-10px); }
+.p3 { transform: rotate(144deg) translateY(-10px); }
+
+.center {
+  position: absolute;
+  width: 25px;
+  height: 25px;
+  background: #FFD740;
+  border-radius: 50%;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.bloomed-flower .petal {
+  background: #FF79B0;
+  animation: blossom 1s ease-out;
+}
+
+.glow-effect {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  animation: glow-pulse 1.5s infinite;
+  box-shadow: 0 0 20px rgba(255, 102, 153, 0.5);
+}
+
+/* Cute Styling for "What's the code to my heart?" Box */
+.love-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 192, 203, 0.9);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  backdrop-filter: blur(5px);
+}
+
+.love-modal {
+  background: #fff5f8;
+  padding: 2rem;
+  border-radius: 25px;
+  box-shadow: 0 0 30px rgba(255, 105, 180, 0.3);
+  max-width: 400px;
+  width: 90%;
+  animation: modalEntrance 0.3s ease-out;
+  position: relative;
+  overflow: hidden;
+}
+
+.love-modal::before {
+  content: '';
+  position: absolute;
+  top: -50px;
+  right: -30px;
+  width: 100px;
+  height: 100px;
+  background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="%23ff3366" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>');
+  opacity: 0.1;
+}
+
+.love-modal h3 {
+  font-family: 'Dancing Script', cursive;
+  font-size: 2rem;
+  color: #ff006e;
+  text-align: center;
+  margin: 0 0 2rem;
+  text-shadow: 2px 2px 4px rgba(255, 192, 203, 0.5);
+}
+
+.love-options {
+  display: grid;
+  gap: 1.5rem;
+  margin: 1.5rem 0;
+}
+
+.heart-option {
+  position: relative;
+  background: linear-gradient(145deg, #ffe6ee, #ffffff);
+  border: 2px solid #ff99c2;
+  border-radius: 15px;
+  padding: 1.2rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 1.2rem;
+  color: #a82a5f;
+  font-weight: 500;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  box-shadow: 0 4px 6px rgba(255, 105, 180, 0.1);
+}
+
+.heart-option:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 15px rgba(255, 77, 136, 0.2);
+  background: linear-gradient(145deg, #ffd9e4, #ffffff);
+}
+
+.heart-option.selected {
+  border-color: #ff006e;
+  background: linear-gradient(145deg, #ffb3d1, #ffffff);
+  color: #ff006e;
+  animation: heartBeat 0.6s ease;
+}
+
+.option-emoji {
+  font-size: 1.8rem;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.feedback-emoji {
+  margin-left: auto;
+  font-size: 1.5rem;
+  animation: pulse 0.5s;
+}
+
+@keyframes heartBeat {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.1); }
+  50% { transform: scale(0.95); }
+  70% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+/* Valentine Agreement Styling */
+.valentine-letter-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 2000;
+  backdrop-filter: blur(3px);
+}
+
+.valentine-letter-overlay.closing {
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+.valentine-letter-overlay.closing .valentine-letter {
+  transform: translateY(20px) rotate(-2deg);
+  transition: all 0.5s ease;
+}
+
+.valentine-letter {
+  background: #fff5f5;
+  padding: 2rem;
+  border-radius: 15px;
+  width: 500px;
+  position: relative;
+  box-shadow: 0 0 30px rgba(255,0,111,0.3);
+  transform: rotate(-2deg);
+  animation: floatUp 0.5s ease-out;
+}
+
+.kitty-background {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: url('https://i.imgur.com/Yo0sBnf.jpeg') center/contain;
+  opacity: 0.3;
+  z-index: -1;
+}
+
+.letter-content {
+  font-family: 'Courier New', Courier, monospace;
+  color: #5e2a34;
+  line-height: 1.6;
+  position: relative;
+  z-index: 1;
+}
+
+.signature-section {
+  margin: 5.5rem 0 2rem 0;
+}
+
+.signature-canvas {
+  border: 2px solid #ff99c2;
+  border-radius: 8px;
+  margin: 10px 0;
+  touch-action: none;
+  display: block;
+  background: white;
+}
+
+.clear-button {
+  background: #ff6699;
+  color: white;
+  border: none;
+  padding: 8px 15px;
+  border-radius: 20px;
+  margin: 5px 0;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.submit-button {
+  background: linear-gradient(145deg, #ff85a2, #ff6699);
+  color: white;
+  border: none;
+  padding: 12px 25px;
+  border-radius: 25px;
+  font-size: 1.1rem;
+  cursor: pointer;
+  width: 100%;
+  transition: opacity 0.3s;
+}
+
+.submit-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@keyframes float {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+@keyframes blossom {
+  0% { transform: rotate(0deg) scale(0.8); }
+  50% { transform: rotate(10deg) scale(1.2); }
+  100% { transform: rotate(0deg) scale(1); }
+}
+
+@keyframes glow-pulse {
+  0% { transform: scale(0.95); opacity: 0.8; }
+  50% { transform: scale(1.1); opacity: 1; }
+  100% { transform: scale(0.95); opacity: 0.8; }
+}
+
+@keyframes modalEntrance {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes sealPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+
+@keyframes floatUp {
+  from { transform: translateY(20px) rotate(-2deg); opacity: 0; }
+  to { transform: translateY(0) rotate(-2deg); opacity: 1; }
+}
+
+@media (max-width: 768px) {
+  .garden-title {
+    font-size: 2rem;
+    
+  }
+  
+  .valentine-letter {
+    margin: 0 1rem;
+    padding: 1.5rem;
+  }
+  
+  .letter-content {
+    font-size: 0.9rem;
+  }
+}

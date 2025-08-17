@@ -1,13 +1,16 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
-import DoYouWannaGoOutWithMe from './DoYouWannaGoOutWithMe';
+import Valentino from './Valentino';
+import AnniversaryTreasureHunt from './AnniversaryTreasureHunt';
+
 import reportWebVitals from './reportWebVitals';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <DoYouWannaGoOutWithMe />
+    {/* <Valentino /> */}
+    <AnniversaryTreasureHunt />
   </React.StrictMode>
 );
 
