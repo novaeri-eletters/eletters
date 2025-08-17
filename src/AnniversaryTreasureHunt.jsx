@@ -1,18 +1,20 @@
 // path: src/AnniversaryTimeline.jsx
-// Event-driven treasure hunt with OSM tiles (no libs). Oval lake path, icons-only time machine, fixed Simulate.
+// Event-driven treasure hunt with OSM tiles (no libs). Oval lake path, icons-only time machine, Simulate tap-to-move.
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /* ================= CONFIG ================= */
 
-// Level 1 — restaurant
+// Level 1 — restaurant (unchanged from last step)
 const L1_TARGET = { lat: 10.8036389, lng: 106.7329167 }; // 10°48'13.1"N 106°43'58.5"E
 
-// Level 2 — lake/canal (oval)
-const LAKE_CENTER = { lat: 10.7699445, lng: 106.7132778 }; // 10°46'11.8"N 106°42'47.8"E
-const OVAL = { aM: 300, bM: 110, rotationDeg: -14, checkpoints: 18, require: 12 }; // tweakable
+// Level 2 — lake (UPDATED)
+const LAKE_CENTER = { lat: 10.7721111, lng: 106.7249722 }; // 10°46'19.6"N 106°43'29.9"E
 
-const GATE_M = 7; // game gate radius
+// Oval around the canal (tweak to match the real curve if needed)
+const OVAL = { aM: 300, bM: 110, rotationDeg: -14, checkpoints: 18, require: 12 };
+
+const GATE_M = 7;
 
 const EVENTS = [
   { id: "intro",         title: "<3 of Hearts — Intro",          kind: "intro" },
@@ -34,7 +36,6 @@ const EVENTS = [
 
 const toRad = (x) => (x * Math.PI) / 180;
 const toDeg = (x) => (x * 180) / Math.PI;
-
 function distanceM(a, b) {
   if (!a || !b) return Infinity;
   const R = 6371000;
@@ -43,13 +44,12 @@ function distanceM(a, b) {
   const h = s1*s1 + Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*s2*s2;
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
 }
-
 const save=(k,v)=>{ try{ localStorage.setItem(k, JSON.stringify(v)); }catch{} };
 const load=(k,d)=>{ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch{ return d; } };
 
 // meters offset (east, north) <-> lat/lng
 function metersToOffsetLL(center, dxEast, dyNorth) {
-  const dLat = dyNorth / 111111; // ~m per degree
+  const dLat = dyNorth / 111111;
   const dLng = dxEast / (111111 * Math.cos(toRad(center.lat)));
   return { lat: center.lat + dLat, lng: center.lng + dLng };
 }
@@ -63,16 +63,9 @@ function llToMetersOffset(center, pt) {
 
 const WORLD_SIZE = (z) => 256 * 2 ** z;
 const lon2x = (lon, z) => ((lon + 180) / 360) * WORLD_SIZE(z);
-const lat2y = (lat, z) => {
-  const s = Math.sin(toRad(lat));
-  const y = 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI);
-  return y * WORLD_SIZE(z);
-};
+const lat2y = (lat, z) => { const s=Math.sin(toRad(lat)); const y=0.5-Math.log((1+s)/(1-s))/(4*Math.PI); return y*WORLD_SIZE(z); };
 const x2lon = (x, z) => (x / WORLD_SIZE(z)) * 360 - 180;
-const y2lat = (y, z) => {
-  const n = Math.PI - (2 * Math.PI * y) / WORLD_SIZE(z);
-  return toDeg(Math.atan(0.5 * (Math.exp(n) - Math.exp(-n))));
-};
+const y2lat = (y, z) => { const n=Math.PI-(2*Math.PI*y)/WORLD_SIZE(z); return toDeg(Math.atan(0.5*(Math.exp(n)-Math.exp(-n)))); };
 
 function useResize(ref){
   const [size,set]=useState({w:0,h:0});
@@ -99,7 +92,7 @@ function OSMMap({ center, zoom, children, onSimClick, simulate }) {
     for (let ty=startY; ty<=endY; ty++){
       for (let tx=startX; tx<=endX; tx++){
         const px=tx*256-originX, py=ty*256-originY;
-        const n=2**zoom, nx=((tx%n)+n)%n; // wrap X
+        const n=2**zoom, nx=((tx%n)+n)%n;
         if (ty>=0 && ty<n){
           tiles.push(
             <img key={`${tx}_${ty}`} alt=""
@@ -139,7 +132,6 @@ function OSMMap({ center, zoom, children, onSimClick, simulate }) {
 /* ================= MAIN APP ================= */
 
 export default function AnniversaryTimeline(){
-  // iOS vh fix
   useEffect(()=>{ const setVH=()=>document.documentElement.style.setProperty("--vh", String(window.innerHeight*0.01));
     // eslint-disable-next-line no-restricted-globals
     setVH(); addEventListener("resize", setVH); return ()=>removeEventListener("resize", setVH); },[]);
@@ -147,7 +139,7 @@ export default function AnniversaryTimeline(){
   const [eventIdx,setEventIdx]   = useState(load("ath_event", 0));
   const [position,setPosition]   = useState(load("ath_pos", null));
   const [simulate,setSimulate]   = useState(false);
-  const [hintRadius,setHint]     = useState(30); // smaller by default
+  const [hintRadius,setHint]     = useState(30);
   const [lakeVisited,setLV]      = useState(load("ath_lakeVisited", []));
   const [check11,setCheck11]     = useState(load("ath_check11", Array.from({length:11},()=>false)));
   const [pellets,setPellets]     = useState(load("ath_pellets", 0));
@@ -171,7 +163,7 @@ export default function AnniversaryTimeline(){
     return () => { if (id != null) navigator.geolocation.clearWatch(id); };
   }, []);
 
-  // Oval checkpoints (meters → lat/lng → projected later)
+  // Oval checkpoints
   const ovalDotsLL = useMemo(()=>{
     const θ = toRad(OVAL.rotationDeg);
     const cosθ = Math.cos(θ), sinθ = Math.sin(θ);
@@ -187,21 +179,21 @@ export default function AnniversaryTimeline(){
     return dots;
   }, []);
 
-  // Track visited dots live
+  // Track visited
   useEffect(()=>{ if(!position) return;
     const hits=new Set(lakeVisited);
     ovalDotsLL.forEach((pt,i)=>{ if(distanceM(position, pt) <= GATE_M) hits.add(i); });
     if(hits.size !== lakeVisited.length){ const arr=[...hits]; setLV(arr); save("ath_lakeVisited", arr); }
   }, [position]);
 
-  // Point-in-oval test (meters)
+  // Point-in-oval
   function insideOval(pt){
     const { dx, dy } = llToMetersOffset(LAKE_CENTER, pt);
     const θ = toRad(-OVAL.rotationDeg);
     const cosθ = Math.cos(θ), sinθ = Math.sin(θ);
     const xr = dx*cosθ - dy*sinθ;
     const yr = dx*sinθ + dy*cosθ;
-    return (xr*xr)/(OVAL.aM*OVAL.aM) + (yr*yr)/(OVAL.bM*OVAL.bM) <= 1.05; // small margin
+    return (xr*xr)/(OVAL.aM*OVAL.aM) + (yr*yr)/(OVAL.bM*OVAL.bM) <= 1.05;
   }
 
   // Gates
@@ -294,7 +286,7 @@ export default function AnniversaryTimeline(){
         >
           {({ project })=>{
             const els=[];
-            // L1 visuals: goal + hint ring
+            // L1 visuals
             if(!showLake){
               const T=project(L1_TARGET.lat, L1_TARGET.lng);
               const mpp=(40075016.686*Math.abs(Math.cos(toRad(L1_TARGET.lat))))/(256*2**zoom);
@@ -311,10 +303,9 @@ export default function AnniversaryTimeline(){
             // L2 visuals: rotated ellipse + dots
             if(showLake){
               const C=project(LAKE_CENTER.lat, LAKE_CENTER.lng);
-              // radii in pixels via meter offsets to LL then project (avoids Mercator pitfall)
-              const A = project(...Object.values(metersToOffsetLL(LAKE_CENTER, OVAL.aM, 0)));
-              const B = project(...Object.values(metersToOffsetLL(LAKE_CENTER, 0, OVAL.bM)));
-              const rx = Math.abs(A.x - C.x), ry = Math.abs(B.y - C.y);
+              const A=project(...Object.values(metersToOffsetLL(LAKE_CENTER, OVAL.aM, 0)));
+              const B=project(...Object.values(metersToOffsetLL(LAKE_CENTER, 0, OVAL.bM)));
+              const rx=Math.abs(A.x-C.x), ry=Math.abs(B.y-C.y);
               els.push(
                 <ellipse key="oval-fill" cx={C.x} cy={C.y} rx={rx} ry={ry}
                   transform={`rotate(${OVAL.rotationDeg} ${C.x} ${C.y})`}
@@ -377,7 +368,7 @@ export default function AnniversaryTimeline(){
         {current.kind==="mini" && (
           <CenterCard>
             <h2 style={{margin:"6px 0"}}>Feed the fish 🐟</h2>
-            <p style={{color:"#666"}}>{EVENTS.find(e=>e.id==="feedFish").text}</p>
+            <p style={{color:"#666"}}>Tap pellets to feed our tiny friends.</p>
             <div style={{fontSize:20, margin:"8px 0"}}>{"🟤".repeat(Math.min(10,pellets))}</div>
             <div style={{display:"flex",gap:8,justifyContent:"center"}}>
               <button className="pill" onClick={()=>{ const n=Math.min(10,pellets+1); setPellets(n); save("ath_pellets",n); }}>Drop pellet</button>
@@ -400,7 +391,7 @@ export default function AnniversaryTimeline(){
             {!voucher ? (
               <>
                 <p style={{color:"#666"}}>You won! Tap to collect.</p>
-                <button className="pill" onClick={claimVoucher}
+                <button className="pill" onClick={()=>{ setVoucher(true); save("ath_voucher", true); navigator.vibrate?.(40); }}
                   style={{background:"linear-gradient(180deg,#ffd1df,#ffb8cd)", color:"#8c0c3a", border:"none"}}>Collect 💖</button>
               </>
             ) : (
@@ -413,7 +404,6 @@ export default function AnniversaryTimeline(){
         )}
       </div>
 
-      {/* Styles */}
       <style>{`
         .pill{border:1px solid rgba(0,0,0,.08);background:#fff;padding:8px 12px;border-radius:999px;font-weight:700;box-shadow:0 6px 20px rgba(0,0,0,.06);cursor:pointer}
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
@@ -459,7 +449,6 @@ function IntroCard({ onBegin }) {
         width: 280, height: 420, borderRadius: 16, background:"#fff",
         boxShadow:"0 18px 60px rgba(0,0,0,.2)", position:"relative"
       }}>
-        {/* Corners */}
         <div style={{ position:"absolute", top:10, left:10, textAlign:"left", lineHeight:1.1 }}>
           <div style={{ fontWeight:800, fontFamily:"ui-monospace,monospace" }}>&lt;3</div>
           <div style={{ color:"#c40a4d", fontSize:20 }}>♥</div>
@@ -468,13 +457,11 @@ function IntroCard({ onBegin }) {
           <div style={{ fontWeight:800, fontFamily:"ui-monospace,monospace" }}>&lt;3</div>
           <div style={{ color:"#c40a4d", fontSize:20 }}>♥</div>
         </div>
-        {/* Middle pips */}
         <div style={{ position:"absolute", inset:0, display:"grid", placeItems:"center" }}>
           <div style={{ fontSize:60, color:"#c40a4d" }}>♥</div>
           <div style={{ position:"absolute", top:80, left:60, fontSize:40, color:"#c40a4d" }}>♥</div>
           <div style={{ position:"absolute", bottom:80, right:60, fontSize:40, color:"#c40a4d", transform:"rotate(180deg)" }}>♥</div>
         </div>
-        {/* Copy */}
         <div style={{ position:"absolute", left:0, right:0, bottom:60, textAlign:"center", padding:"0 16px" }}>
           <div style={{ fontWeight:800 }}>Heart Trial</div>
           <div style={{ fontSize:12, color:"#555", marginTop:6 }}>Beat the clues, win a gift voucher.</div>
@@ -498,14 +485,10 @@ function IntroCard({ onBegin }) {
   assert(Math.round(distanceM(a,a))===0,"zero distance");
   const z=16, x=lon2x(a.lng,z), y=lat2y(a.lat,z);
   assert(Math.abs(a.lng-x2lon(x,z))<1e-6 && Math.abs(a.lat-y2lat(y,z))<1e-6,"mercator invert");
-
-  // Oval math sanity: center -> offset round-trip
   const off = metersToOffsetLL(LAKE_CENTER, 100, -50);
   const {dx,dy} = llToMetersOffset(LAKE_CENTER, off);
-  assert(Math.abs(dx-100)<0.5 && Math.abs(dy+50)<0.5, "meters<->LL roundtrip");
-
-  // Gate 7 m
+  assert(Math.abs(dx-100)<0.5 && Math.abs(dy+50)<0.5,"meters<->LL roundtrip");
   const t={lat:10,lng:10}, inside={lat:10+(GATE_M/111111),lng:10}, outside={lat:10+((GATE_M+1)/111111),lng:10};
-  const dIn=Math.round(distanceM(t,inside)), dOut=Math.round(distanceM(t,outside));
-  assert(dIn<=GATE_M,"≤7m gate"); assert(dOut>GATE_M,">7m outside");
+  assert(Math.round(distanceM(t,inside))<=GATE_M,`≤${GATE_M}m gate`);
+  assert(Math.round(distanceM(t,outside))>GATE_M,`>${GATE_M}m outside`);
 })();
